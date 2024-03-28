@@ -1,49 +1,66 @@
+const fs = require('fs').promises;
 const { spawn } = require('child_process');
-const fs = require('fs');
-const util = require('util');
-const execFile = util.promisify(require('child_process').execFile);
+const path = require('path');
 
-const cloneAndSetupRepo = async (repoUrl, newBranchName, defaultBranch = 'master') => {
-  // Step 1: Clone the repository
-  console.log('Cloning repository...');
-  await execGitCommand(['clone', repoUrl]);
-
-  // Determine the directory name from the repo URL
-  const repoName = repoUrl.split('/').pop().replace(/(\.git)$/, '');
-  const repoPath = ./${repoName};
-
-  // Step 2: Change directory to the cloned repository
-  process.chdir(repoPath);
-  console.log(Changed directory to ${repoPath});
-
-  // Step 3: Create a new branch and set it to track the remote branch
-  console.log(Creating and switching to new branch: ${newBranchName});
-  await execGitCommand(['checkout', '-b', newBranchName, origin/${defaultBranch}]);
-
-  // Step 4: Pull from the default branch (e.g., master)
-  console.log(Pulling from ${defaultBranch}...);
-  await execGitCommand(['pull', 'origin', defaultBranch]);
-
-  // Step 5: Install npm dependencies
-  console.log('Installing npm dependencies...');
-  await execNpmCommand(['install']);
-
-  // Step 6: Start the application
-  console.log('Starting the application...');
-  await execNpmCommand(['start']);
-};
-
-// Utility function to execute git commands
-async function execGitCommand(args) {
-  await execFile('git', args, { cwd: process.cwd() });
+async function execShellCommand(command, args, cwd) {
+  return new Promise((resolve, reject) => {
+    const process = spawn(command, args, { cwd, shell: true });
+    process.stdout.on('data', data => console.log(data.toString()));
+    process.stderr.on('data', data => console.error(data.toString()));
+    process.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(${command} exited with code ${code}));
+      }
+    });
+  });
 }
 
-// Utility function to execute npm commands
-async function execNpmCommand(args) {
-  await execFile('npm', args, { cwd: process.cwd() });
+async function updateFiles(repoPath, changes) {
+  for (const change of changes) {
+    const filePath = path.join(repoPath, change.file);
+    let fileContent = await fs.readFile(filePath, 'utf8');
+    // Perform your replacement here. This is an example:
+    fileContent = fileContent.replace(change.regex, change.replacement);
+    await fs.writeFile(filePath, fileContent);
+  }
 }
 
-// Example usage:
-cloneAndSetupRepo('https://github.com/user/repo.git', 'new-branch')
-  .then(() => console.log('Repository setup complete.'))
-  .catch(error => console.error('An error occurred:', error));
+async function setupRepo(repoPath, branchName, defaultBranch, legacyDeps) {
+  if (await exists(repoPath)) {
+    console.log('Repository exists. Stashing and checking out branch...');
+    await execShellCommand('git', ['stash'], repoPath);
+    await execShellCommand('git', ['checkout', branchName], repoPath);
+    await execShellCommand('git', ['pull', 'origin', defaultBranch], repoPath);
+  } else {
+    console.log('Repository does not exist.');
+    // Clone the repo or throw an error based on your flow
+  }
+
+  console.log('Updating files...');
+  const changes = [
+    { file: 'file1.js', regex: /oldFunction\(/g, replacement: 'newFunction(' },
+    // Add more changes as needed
+  ];
+  await updateFiles(repoPath, changes);
+
+  console.log('Running npm install...');
+  const npmInstallArgs = legacyDeps ? ['install', '--legacy-peer-deps'] : ['install'];
+  await execShellCommand('npm', npmInstallArgs, repoPath);
+
+  console.log('Starting application...');
+  await execShellCommand('npm', ['start'], repoPath);
+}
+
+async function exists(directory) {
+  try {
+    await fs.access(directory);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Usage example:
+setupRepo('/path/to/repo', 'feature-branch', 'master', true);
