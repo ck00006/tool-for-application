@@ -1,0 +1,49 @@
+const { spawn } = require('child_process');
+const fs = require('fs');
+const util = require('util');
+const execFile = util.promisify(require('child_process').execFile);
+
+const cloneAndSetupRepo = async (repoUrl, newBranchName, defaultBranch = 'master') => {
+  // Step 1: Clone the repository
+  console.log('Cloning repository...');
+  await execGitCommand(['clone', repoUrl]);
+
+  // Determine the directory name from the repo URL
+  const repoName = repoUrl.split('/').pop().replace(/(\.git)$/, '');
+  const repoPath = ./${repoName};
+
+  // Step 2: Change directory to the cloned repository
+  process.chdir(repoPath);
+  console.log(Changed directory to ${repoPath});
+
+  // Step 3: Create a new branch and set it to track the remote branch
+  console.log(Creating and switching to new branch: ${newBranchName});
+  await execGitCommand(['checkout', '-b', newBranchName, origin/${defaultBranch}]);
+
+  // Step 4: Pull from the default branch (e.g., master)
+  console.log(Pulling from ${defaultBranch}...);
+  await execGitCommand(['pull', 'origin', defaultBranch]);
+
+  // Step 5: Install npm dependencies
+  console.log('Installing npm dependencies...');
+  await execNpmCommand(['install']);
+
+  // Step 6: Start the application
+  console.log('Starting the application...');
+  await execNpmCommand(['start']);
+};
+
+// Utility function to execute git commands
+async function execGitCommand(args) {
+  await execFile('git', args, { cwd: process.cwd() });
+}
+
+// Utility function to execute npm commands
+async function execNpmCommand(args) {
+  await execFile('npm', args, { cwd: process.cwd() });
+}
+
+// Example usage:
+cloneAndSetupRepo('https://github.com/user/repo.git', 'new-branch')
+  .then(() => console.log('Repository setup complete.'))
+  .catch(error => console.error('An error occurred:', error));
